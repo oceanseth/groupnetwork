@@ -182,29 +182,30 @@ button:focus-visible {
   top: 16px;
 }
 .menu-btn.open .menu-icon {
-  background: transparent;
+  display: none;
 }
-.menu-btn.open .menu-icon::before {
-  transform: translateY(6px) rotate(45deg);
-}
+.menu-btn.open .menu-icon::before,
 .menu-btn.open .menu-icon::after {
-  transform: translateY(-6px) rotate(-45deg);
+  display: none;
 }
 
 .nav-menu {
   position: fixed;
   top: 64px;
   right: 0;
+  width: 220px;
   background: #181818;
-  box-shadow: -2px 0 8px rgba(0,0,0,0.08);
-  padding: 2rem 1.5rem;
+  box-shadow: -2px 0 8px rgba(0,0,0,0.18);
+  padding: 2rem 1.2rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  min-width: 180px;
+  min-width: 0;
   transform: translateX(100%);
   transition: transform 0.3s;
-  z-index: 105;
+  z-index: 9999;
+  font-size: 1.15rem;
+  box-sizing: border-box;
 }
 .nav-menu.open {
   transform: translateX(0);
@@ -244,7 +245,7 @@ button:focus-visible {
   max-width: 900px;
   margin: 0 auto;
   padding: .5rem 1.5rem 2rem 1.5rem;
-  background: rgba(36,36,36,0.98);
+  background: #1f2533;
   border-radius: 18px;
   box-shadow: 0 2px 16px rgba(0,0,0,0.08);
   margin-bottom: 2.5rem;
@@ -252,6 +253,7 @@ button:focus-visible {
   display: none;
   transition: opacity 0.8s ease, transform 0.8s ease;
   color: #E0E0E0;
+  scroll-margin-top: 80px;
 }
 .section h2 {
   color: #3ABEFF;
@@ -260,12 +262,14 @@ button:focus-visible {
   border-bottom: 2px solid #3ABEFF;
   display: inline-block;
   padding-bottom: 0.2em;
+  font-family: 'Josefin Sans', Arial, Helvetica, sans-serif;
+  font-weight: 700;
 }
 .project, .tool {
   margin-bottom: 1.5rem;
 }
 .project a, .tool a {
-  color: #FFD700;
+  color: #839171;
   font-size: 1.2rem;
   font-weight: 600;
   text-decoration: underline;
@@ -306,8 +310,10 @@ button:focus-visible {
     padding: 2.5rem 0.7rem 1.2rem 0.7rem;
   }
   .nav-menu {
-    padding: 1.2rem 0.7rem;
-    min-width: 120px;
+    top: 54px;
+    width: 220px;
+    padding: 1.2rem 0.8rem;
+    font-size: 1.05rem;
   }
 }
 
@@ -336,4 +342,31 @@ button:focus-visible {
 }
 .footer a:hover {
   color: #3ABEFF;
+}
+
+.three-header {
+  width: 100%;
+  height: 80px;
+  min-height: 60px;
+  max-width: 900px;
+  margin: 0 auto 1.2rem auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+}
+@media (max-width: 700px) {
+  .three-header {
+    height: 48px;
+    min-height: 36px;
+  }
+}
+
+html, body {
+  overflow-x: hidden;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
 }

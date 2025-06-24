@@ -15,6 +15,16 @@ const currentProjects = [
     name: 'ChooseAStory',
     url: 'https://www.chooseastory.com',
     desc: 'ChooseAStory: Interactive storytelling platform for creators and readers.'
+  },
+  {
+    name: 'Call My Echo',
+    url: 'https://www.callmyecho.com',
+    desc: 'Create an AI personal assistant and give a unique phone number to your friends to call it.'
+  },
+  {
+    name: 'BazaarPlanner',
+    url: 'https://www.bazaarplanner.com',
+    desc: 'Simulator for the Tempo Storm game http://www.playthebazaar.com'
   }
 ]
 const pastProjects = [
@@ -52,25 +62,134 @@ function injectSectionContent() {
   const past = document.getElementById('past-projects')
   const tools = document.getElementById('public-tools')
   if (current) {
-    current.innerHTML = `<h2>Current Projects</h2>` +
+    current.innerHTML = `<div class="three-header" data-text="Current Projects"></div>` +
       currentProjects.map(p => `<div class="project"><a href="${p.url}" target="_blank">${p.name}</a><p>${p.desc}</p></div>`).join('')
     current.style.opacity = '0'
   }
   if (past) {
-    past.innerHTML = `<h2>Past Projects</h2>` +
+    past.innerHTML = `<div class="three-header" data-text="Past Projects"></div>` +
       pastProjects.map(p => `<div class="project"><a href="${p.url}" target="_blank">${p.name}</a><p>${p.desc}</p></div>`).join('')
     past.style.opacity = '0'
   }
   if (tools) {
-    tools.innerHTML = `<h2>Public Tools</h2>` +
+    tools.innerHTML = `<div class="three-header" data-text="Public Tools"></div>` +
       publicTools.map(t => `<div class="tool"><a href="${t.url}" target="_blank">${t.name}</a><p>${t.desc}</p></div>`).join('')
     tools.style.opacity = '0'
   }
+  // After injecting, initialize 3D headers
+  init3DHeaders();
 }
 
 // 3D Text Animation
 let scene: THREE.Scene, camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, textMesh: THREE.Mesh
 let animatingToHeader = false
+
+// Store all header light update functions as {el, fn}
+const headerLightUpdaters: Array<{el: HTMLElement, fn: (x: number, y: number) => void}> = [];
+
+function create3DHeaderText(container: HTMLElement, text: string) {
+  const width = container.offsetWidth || 600;
+  const height = container.offsetHeight || 80;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+  camera.position.set(0, 0, 60);
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setSize(width, height);
+  container.appendChild(renderer.domElement);
+
+  const loader = new FontLoader();
+  loader.load('https://unpkg.com/three@0.150.1/examples/fonts/helvetiker_regular.typeface.json', (font) => {
+    const geometry = new TextGeometry(text, {
+      font: font,
+      size: 16,
+      depth: 2.5,
+      curveSegments: 12,
+      bevelEnabled: true,
+      bevelThickness: 0.3,
+      bevelSize: 0.2,
+      bevelOffset: 0,
+      bevelSegments: 5
+    });
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xe0e0e0, // silvery white
+      metalness: 0.85,
+      roughness: 0.25,
+      emissive: 0x111111,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    geometry.center();
+    mesh.position.set(0, 0, 0);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    scene.add(mesh);
+  });
+
+  // Lighting (match original)
+  const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+  scene.add(ambient);
+  const spot = new THREE.SpotLight(0xffffff, 1.2, 200, Math.PI / 6, 0.3, 1);
+  spot.position.set(0, 40, 60);
+  scene.add(spot);
+  const rimLight = new THREE.DirectionalLight(0xffffff, 0.7);
+  rimLight.position.set(-40, 60, 100);
+  scene.add(rimLight);
+  // Interactive mouse-following light (DirectionalLight)
+  const mouseLight = new THREE.DirectionalLight(0xffffff, 2.5);
+  mouseLight.position.set(0, 0, 60);
+  scene.add(mouseLight);
+
+  function updateLightFromMouse(x: number, y: number) {
+    mouseLight.position.x = x * 40;
+    mouseLight.position.y = -y * 20;
+    mouseLight.position.z = 60;
+  }
+  headerLightUpdaters.push({el: container, fn: updateLightFromMouse});
+
+  function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+
+function init3DHeaders() {
+  // Clear previous updaters to avoid updating old/detached lights
+  headerLightUpdaters.length = 0;
+  const headers = document.querySelectorAll<HTMLElement>('.three-header');
+  headers.forEach(header => {
+    const text = header.dataset.text || header.textContent || '';
+    header.innerHTML = '';
+    create3DHeaderText(header, text);
+  });
+}
+
+function setupHeaderLightTracking() {
+  let lastUpdate = 0;
+  function handleMove(e: MouseEvent | TouchEvent) {
+    const now = Date.now();
+    if (now - lastUpdate < 200) return;
+    lastUpdate = now;
+    headerLightUpdaters.forEach(({el, fn}) => {
+      const rect = el.getBoundingClientRect();
+      let clientX = 0, clientY = 0;
+      if (e instanceof MouseEvent) {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      } else if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      }
+      // Normalize x/y to [-1, 1] within the header canvas
+      const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const y = ((clientY - rect.top) / rect.height) * 2 - 1;
+      fn(x, y);
+    });
+  }
+  window.addEventListener('mousemove', handleMove);
+  window.addEventListener('touchmove', handleMove);
+}
+
+let introMouseLight: THREE.DirectionalLight | null = null;
 
 function init3DText() {
   const container = document.getElementById('three-container')
@@ -127,6 +246,11 @@ function init3DText() {
   const rimLight = new THREE.DirectionalLight(0xffffff, 0.7)
   rimLight.position.set(-40, 60, 100)
   scene.add(rimLight)
+
+  // Add mouse-following light for intro text (DirectionalLight)
+  introMouseLight = new THREE.DirectionalLight(0xffffff, 2.5);
+  introMouseLight.position.set(0, 0, 60);
+  scene.add(introMouseLight);
 
   const shadowGeo = new THREE.PlaneGeometry(60, 20)
   const shadowMat = new THREE.ShadowMaterial({ opacity: 0.25 })
@@ -218,6 +342,13 @@ function setupHeaderMenu() {
       navMenu.classList.toggle('open')
       menuBtn.classList.toggle('open')
     })
+    // Close menu when a link is clicked
+    navMenu.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => {
+        navMenu.classList.remove('open');
+        menuBtn.classList.remove('open');
+      });
+    });
   }
   // Hide menu by default
   if (menuBtn) menuBtn.style.display = 'none'
@@ -236,8 +367,39 @@ function setupScrollAndClick() {
   })
 }
 
+function setupIntroLightTracking() {
+  const container = document.getElementById('three-container');
+  if (!container) return;
+  let lastUpdate = 0;
+  function handleMove(e: MouseEvent | TouchEvent) {
+    const now = Date.now();
+    if (now - lastUpdate < 200) return;
+    lastUpdate = now;
+    if (!introMouseLight) return;
+    const rect = container.getBoundingClientRect();
+    let clientX = 0, clientY = 0;
+    if (e instanceof MouseEvent) {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    } else if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    }
+    // Normalize x/y to [-1, 1] within the intro canvas
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = ((clientY - rect.top) / rect.height) * 2 - 1;
+    introMouseLight.position.x = x * 40;
+    introMouseLight.position.y = -y * 20;
+    introMouseLight.position.z = 60;
+  }
+  container.addEventListener('mousemove', handleMove);
+  container.addEventListener('touchmove', handleMove);
+}
+
 // Inject content and initialize
-injectSectionContent()
-setupHeaderMenu()
-setupScrollAndClick()
-init3DText()
+injectSectionContent();
+setupHeaderMenu();
+setupScrollAndClick();
+init3DText();
+setupHeaderLightTracking();
+setupIntroLightTracking();
