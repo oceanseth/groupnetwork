@@ -372,6 +372,7 @@ function setupIntroLightTracking() {
   if (!container) return;
   let lastUpdate = 0;
   function handleMove(e: MouseEvent | TouchEvent) {
+    if (!container) return;
     const now = Date.now();
     if (now - lastUpdate < 200) return;
     lastUpdate = now;
