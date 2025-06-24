@@ -30,7 +30,7 @@ const pastProjects = [
   },
   {
     name: 'SnapChallenge',
-    url: 'https://snapchallenge.com',
+    url: 'https://www.snapchallenge.com',
     desc: 'SnapChallenge: Creative photo challenges for everyone.'
   }
 ]
@@ -180,6 +180,12 @@ function showHeader() {
     (section as HTMLElement).style.display = 'block'
     gsap.fromTo(section, { opacity: 0, y: 50 }, { opacity: 1, y: 0, delay: 1 + index * 0.3, duration: 0.8 })
   })
+  // Show the footer
+  const footer = document.getElementById('footer');
+  if (footer) {
+    footer.style.display = 'flex';
+    gsap.to(footer, { opacity: 1, delay: 1.5, duration: 0.8 });
+  }
 }
 
 function onWindowResize() {
