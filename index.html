@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Group Network</title>
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@700&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="app">
       <header id="header" class="header">
-        <div id="header-title" class="header-title"></div>
+        <div class="three-header" id="site-three-header" style="margin-top:20px;" data-text="Group Network"></div>
         <button id="menu-btn" class="menu-btn" aria-label="Open menu">
           <span class="menu-icon"></span>
         </button>
@@ -22,17 +23,17 @@
       <main>
         <div id="three-container" class="three-container"></div>
         <section id="current-projects" class="section">
-          <!-- Content will be injected by JS -->
+          <div class="three-header" data-text="Current Projects"></div>
         </section>
         <section id="past-projects" class="section">
-          <!-- Content will be injected by JS -->
+          <div class="three-header" data-text="Past Projects"></div>
         </section>
         <section id="public-tools" class="section">
-          <!-- Content will be injected by JS -->
+          <div class="three-header" data-text="Public Tools"></div>
         </section>
       </main>
       <footer class="footer" id="footer" style="display: none; opacity: 0;">
-        <span>&copy; 2024 Group Network. All rights reserved.</span>
+        <span>&copy; 2024 Group Network.<br/>All rights reserved.</span>
         <a href="mailto:seth@groupnetwork.com">Contact</a>
       </footer>
     </div>
