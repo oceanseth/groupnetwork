@@ -169,7 +169,7 @@ button:focus-visible {
   display: block;
   height: 4px;
   width: 28px;
-  background: #FFD700;
+  background: #839171;
   border-radius: 2px;
   position: absolute;
   top: 16px;
@@ -211,7 +211,7 @@ button:focus-visible {
   transform: translateX(0);
 }
 .nav-menu a {
-  color: #FFD700;
+  color: #839171;
   font-size: 1.1rem;
   font-weight: 600;
   text-decoration: none;
@@ -335,7 +335,7 @@ button:focus-visible {
   transition: opacity 0.8s;
 }
 .footer a {
-  color: #FFD700;
+  color: #839171;
   text-decoration: underline;
   font-weight: 500;
   transition: color 0.2s;
