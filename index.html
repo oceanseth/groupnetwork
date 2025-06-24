@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Group Network</title>
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="header" class="header">
+        <div id="header-title" class="header-title"></div>
+        <button id="menu-btn" class="menu-btn" aria-label="Open menu">
+          <span class="menu-icon"></span>
+        </button>
+        <nav id="nav-menu" class="nav-menu">
+          <a href="#current-projects">Current Projects</a>
+          <a href="#past-projects">Past Projects</a>
+          <a href="#public-tools">Public Tools</a>
+        </nav>
+      </header>
+      <main>
+        <div id="three-container" class="three-container"></div>
+        <section id="current-projects" class="section">
+          <!-- Content will be injected by JS -->
+        </section>
+        <section id="past-projects" class="section">
+          <!-- Content will be injected by JS -->
+        </section>
+        <section id="public-tools" class="section">
+          <!-- Content will be injected by JS -->
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
