@@ -93,7 +93,8 @@ function create3DHeaderText(container: HTMLElement, text: string) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
   camera.position.set(0, 0, 60);
-  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
+  renderer.setPixelRatio(1);
   renderer.setSize(width, height);
   container.appendChild(renderer.domElement);
 
@@ -138,18 +139,19 @@ function create3DHeaderText(container: HTMLElement, text: string) {
   mouseLight.position.set(0, 0, 60);
   scene.add(mouseLight);
 
+  function render() {
+    renderer.render(scene, camera);
+  }
+  // Call render once after setup
+  render();
+  // Update light and render on mouse move
   function updateLightFromMouse(x: number, y: number) {
     mouseLight.position.x = x * 40;
     mouseLight.position.y = -y * 20;
     mouseLight.position.z = 60;
+    render();
   }
   headerLightUpdaters.push({el: container, fn: updateLightFromMouse});
-
-  function animate() {
-    requestAnimationFrame(animate);
-    renderer.render(scene, camera);
-  }
-  animate();
 }
 
 function init3DHeaders() {
