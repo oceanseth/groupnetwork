@@ -307,11 +307,14 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, .btn:focus-vi
 
 .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 680; }
 .brand:hover { text-decoration: none; }
+/* The mark is masked rather than drawn so it takes its colour from CSS: teal
+   here, and any single colour a future surface needs. */
 .brand__mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, var(--human), var(--agent));
+  width: 24px;
+  height: 24px;
+  background: var(--human);
+  -webkit-mask: url(/mark-glyph.svg) center / contain no-repeat;
+  mask: url(/mark-glyph.svg) center / contain no-repeat;
 }
 
 @media (prefers-reduced-motion: reduce) {

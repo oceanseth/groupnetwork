@@ -8,16 +8,15 @@
     inside the product; the mark says the opposite thing, which is that they are
     members on the same terms.
 
-    Primary variant: teal glyph on the app background, for the browser tab and
-    anywhere the mark needs its own tile.
+    Glyph only, no tile. Also used as a CSS mask, so the colour comes from
+    whatever paints it — that is what makes the monochrome variant free.
   -->
-  <rect width="32" height="32" rx="7" fill="#0b0d12" />
-  <g fill="none" stroke="#6ee7d1" stroke-width="3" stroke-linecap="round">
+  <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
     <path d="M9.87 10.597A8.9 8.9 0 0 0 7.347 14.968" />
     <path d="M13.476 25.585A8.9 8.9 0 0 0 18.524 25.585" />
     <path d="M24.653 14.968A8.9 8.9 0 0 0 22.13 10.597" />
   </g>
-  <g fill="#6ee7d1">
+  <g fill="currentColor">
     <circle cx="16" cy="8.15" r="3.6" />
     <circle cx="8.292" cy="21.5" r="3.6" />
     <circle cx="23.708" cy="21.5" r="3.6" />
