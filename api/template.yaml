@@ -1,0 +1,252 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Group Network — agentic social network backend.
+  Single DynamoDB table (data + presence + socket subscriptions), one HTTP API
+  for the REST surface, one WebSocket API for realtime, and a DynamoDB Streams
+  fan-out that pushes new writes to subscribed sockets.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, prod]
+  SessionSecret:
+    Type: String
+    NoEcho: true
+    Description: HS256 signing secret for Group Network session tokens.
+  MaskyClientId:
+    Type: String
+    Description: OAuth client_id issued by masky.ai (POST /api/oauth/clients).
+  MaskyClientSecret:
+    Type: String
+    NoEcho: true
+    Description: OAuth client secret issued by masky.ai.
+  MaskyApiBase:
+    Type: String
+    Default: https://masky.ai/api
+  GoogleClientId:
+    Type: String
+    Description: Google Identity Services client_id, used to verify ID tokens.
+  TurnstileSecret:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Cloudflare Turnstile secret key for the human-only captcha.
+  VoiceCertApiBase:
+    Type: String
+    Default: ''
+    Description: >
+      VoiceCert verification API base URL. Leave empty until the contract is
+      wired — the voicecert provider reports unavailable rather than pretending.
+  VoiceCertApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+  WebOrigin:
+    Type: String
+    Default: https://www.groupnetwork.com
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 15
+    MemorySize: 512
+    Architectures: [arm64]
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref Table
+        SESSION_SECRET: !Ref SessionSecret
+        MASKY_CLIENT_ID: !Ref MaskyClientId
+        MASKY_CLIENT_SECRET: !Ref MaskyClientSecret
+        MASKY_API_BASE: !Ref MaskyApiBase
+        GOOGLE_CLIENT_ID: !Ref GoogleClientId
+        TURNSTILE_SECRET: !Ref TurnstileSecret
+        VOICECERT_API_BASE: !Ref VoiceCertApiBase
+        VOICECERT_API_KEY: !Ref VoiceCertApiKey
+        WEB_ORIGIN: !Ref WebOrigin
+        HARNESS_KEY_ID: !Ref HarnessKey
+
+Resources:
+  # ---------------------------------------------------------------- storage --
+  # Single-table design. See ../ARCHITECTURE.md for the full key map.
+  Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub groupnetwork-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: gsi1pk, AttributeType: S }
+        - { AttributeName: gsi1sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - { AttributeName: gsi1pk, KeyType: HASH }
+            - { AttributeName: gsi1sk, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  # Envelope key for third-party harness credentials (Anthropic/OpenAI/custom).
+  # Keys are encrypted on write and only ever decrypted inside the runner.
+  HarnessKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Group Network harness credential encryption
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root' }
+            Action: 'kms:*'
+            Resource: '*'
+
+  HarnessKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/groupnetwork-harness-${Stage}
+      TargetKeyId: !Ref HarnessKey
+
+  # ------------------------------------------------------------------ http --
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowOrigins: [!Ref WebOrigin, 'http://localhost:5173']
+        AllowHeaders: [authorization, content-type]
+        AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
+        AllowCredentials: false
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub groupnetwork-api-${Stage}
+      CodeUri: src/
+      Handler: http/router.handler
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - KMSEncryptPolicy: { KeyId: !Ref HarnessKey }
+        - KMSDecryptPolicy: { KeyId: !Ref HarnessKey }
+      Events:
+        Any:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+  # ------------------------------------------------------------- websocket --
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub groupnetwork-ws-${Stage}
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+
+  SocketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub groupnetwork-socket-${Stage}
+      CodeUri: src/
+      Handler: ws/socket.handler
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - Statement:
+            Effect: Allow
+            Action: ['execute-api:ManageConnections']
+            Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  SocketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref SocketFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  SocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SocketFunction.Arn}/invocations'
+
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      Target: !Sub 'integrations/${SocketIntegration}'
+
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      Target: !Sub 'integrations/${SocketIntegration}'
+
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $default
+      Target: !Sub 'integrations/${SocketIntegration}'
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    DependsOn: [ConnectRoute, DisconnectRoute, DefaultRoute]
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: !Ref Stage
+      AutoDeploy: true
+
+  # --------------------------------------------------------------- fan-out --
+  # Every realtime push in the product comes from here: a write lands in
+  # DynamoDB, the stream picks it up, and it goes out to subscribed sockets.
+  FanoutFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub groupnetwork-fanout-${Stage}
+      CodeUri: src/
+      Handler: stream/fanout.handler
+      Environment:
+        Variables:
+          WS_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - DynamoDBStreamReadPolicy:
+            TableName: !Ref Table
+            StreamName: !Select [3, !Split ['/', !GetAtt Table.StreamArn]]
+        - Statement:
+            Effect: Allow
+            Action: ['execute-api:ManageConnections']
+            Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+      Events:
+        Stream:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt Table.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 100
+            MaximumRetryAttempts: 3
+            BisectBatchOnFunctionError: true
+
+Outputs:
+  HttpApiUrl:
+    Description: REST base URL — set as VITE_API_BASE.
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+  WebSocketUrl:
+    Description: Realtime endpoint — set as VITE_WS_URL.
+    Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}'
+  TableName:
+    Value: !Ref Table
