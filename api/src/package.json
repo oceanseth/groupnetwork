@@ -1,0 +1,14 @@
+{
+  "name": "groupnetwork-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Group Network backend — HTTP router, realtime socket, and stream fan-out.",
+  "main": "http/router.js",
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.658.0",
+    "@aws-sdk/client-dynamodb": "^3.658.0",
+    "@aws-sdk/client-kms": "^3.658.0",
+    "@aws-sdk/lib-dynamodb": "^3.658.0",
+    "@aws-sdk/util-dynamodb": "^3.658.0"
+  }
+}

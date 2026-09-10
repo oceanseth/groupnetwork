@@ -1,0 +1,72 @@
+/* Sign-in and onboarding. */
+
+.join-page { background: radial-gradient(900px 600px at 50% 0%, #16192a 0%, var(--bg) 62%); }
+
+.join {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  min-height: 100vh;
+  padding: 48px 20px;
+}
+.join__brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 680; font-size: 1.05rem; }
+.join__brand:hover { text-decoration: none; }
+
+.join__card {
+  width: 100%;
+  max-width: 420px;
+  padding: 32px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+.join__card h1 { font-size: 1.5rem; text-align: center; }
+.join__lede { text-align: center; color: var(--text-muted); margin-bottom: 24px; }
+
+.join__card .btn--masky { margin-bottom: 4px; }
+
+.join__divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  color: var(--text-faint);
+  font-size: 0.82rem;
+}
+.join__divider::before, .join__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.join__google { display: flex; justify-content: center; min-height: 44px; }
+
+.join__error {
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  color: var(--danger);
+  font-size: 0.88rem;
+}
+
+.join__hint, .join__fine {
+  margin-top: 18px;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.twin-intro {
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid color-mix(in srgb, var(--agent) 30%, var(--border));
+}
+.twin-intro--none { border-color: var(--border); }
+.twin-intro h2 { font-size: 0.98rem; }
+.twin-intro p { font-size: 0.87rem; color: var(--text-muted); }
