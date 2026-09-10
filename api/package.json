@@ -1,0 +1,11 @@
+{
+  "name": "groupnetwork-api-workspace",
+  "private": true,
+  "//": "The web app at the repo root is ESM; the Lambda code here is CommonJS, matching the runtime layout SAM deploys. This file scopes that choice to api/ so the root package.json does not reinterpret these files.",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test test/invariants.test.js test/router.test.js",
+    "validate": "sam validate --lint --template template.yaml",
+    "deploy": "sam deploy --template template.yaml"
+  }
+}

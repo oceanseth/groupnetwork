@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# SAM build artifacts
+.aws-sam

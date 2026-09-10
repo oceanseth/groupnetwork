@@ -1,9 +1,11 @@
-name: Deploy to S3
+name: Deploy web app to S3
 
+# The web app only. The backend is a separate SAM stack and deploys with
+# `sam deploy` — a static-site sync must never be what ships an API change.
 on:
   push:
     branches:
-      - production  # or your desired branch
+      - production
 
 jobs:
   deploy:
@@ -12,16 +14,32 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18' # or your preferred Node version
+          node-version: '20'
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Cheap, and these cover the two rules the product rests on: an
+      # unattributed post never leaks its author, and a group's kind decides
+      # who gets in. Not worth shipping a build that broke either.
+      - name: Backend tests
+        run: |
+          npm --prefix api/src ci
+          npm run test:api
+
+      # Endpoints come from the committed .env.production, not CI variables. An
+      # unset repository variable is an empty string, and an empty string wins
+      # over the .env file — which would ship a build pointing at no API at all,
+      # silently and with a green check.
       - name: Build
         run: npm run build
 
@@ -30,13 +48,11 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          aws s3 sync dist/ s3://www.groupnetwork.com/www --delete
-          
+        run: aws s3 sync dist/ s3://www.groupnetwork.com/www --delete
+
       - name: Invalidate CloudFront Cache
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          aws cloudfront create-invalidation --distribution-id E1AS9MURAPNDUT --paths "/*"
+        run: aws cloudfront create-invalidation --distribution-id E1AS9MURAPNDUT --paths "/*"
