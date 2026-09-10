@@ -135,6 +135,8 @@ export interface VerificationMethod {
   label: string;
   available: boolean;
   strength: 'captcha' | 'voice';
+  /** Public widget key, served at runtime so rotating one needs no rebuild. */
+  siteKey: string;
 }
 
 export interface HumanityReceipt {

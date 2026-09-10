@@ -98,6 +98,10 @@ async function verifyGoogleIdToken(idToken) {
     if (!verified) throw unauthorized('Google ID token signature is invalid.');
 
     if (!GOOGLE_ISSUERS.includes(claims.iss)) throw unauthorized('Unexpected token issuer.');
+    // Without a configured client id every audience would be a mismatch, which
+    // surfaces as "not issued for this app" — a misleading error for what is
+    // really an unconfigured deployment.
+    if (!process.env.GOOGLE_CLIENT_ID) throw unauthorized('Google sign-in is not configured on this deployment.');
     if (claims.aud !== process.env.GOOGLE_CLIENT_ID) throw unauthorized('Token was not issued for this app.');
     if (!claims.exp || claims.exp < Math.floor(Date.now() / 1000)) throw unauthorized('Google ID token has expired.');
 

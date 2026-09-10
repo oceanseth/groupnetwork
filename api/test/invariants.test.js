@@ -192,3 +192,155 @@ test('handles are constrained to what is safe in a URL', () => {
     assert.equal(normalizeHandle('drop/slash'), null);
     assert.equal(normalizeHandle('a'.repeat(31)), null, 'too long should be rejected');
 });
+
+// ----------------------------------------------------------- verification --
+//
+// The humanity providers are a security boundary: anything that makes one of
+// them return `verified: true` when it should not hands out an unattributed
+// post. These pin the failure modes, which is where that risk actually lives.
+
+const verification = require('../src/lib/verification');
+// issueReceipt persists, so this file needs the in-memory table too.
+require('./helpers/memory-table').install();
+
+/** Run `fn` with a stubbed global fetch, restoring the real one afterwards. */
+async function withFetch(impl, fn) {
+    const real = global.fetch;
+    const calls = [];
+    global.fetch = async (url, init) => {
+        calls.push({ url, init });
+        return impl(url, init);
+    };
+    try {
+        return await fn(calls);
+    } finally {
+        global.fetch = real;
+    }
+}
+
+function withVoiceCertEnv(values) {
+    const before = {
+        VOICECERT_API_BASE: process.env.VOICECERT_API_BASE,
+        VOICECERT_SITE_KEY: process.env.VOICECERT_SITE_KEY,
+        VOICECERT_SECRET: process.env.VOICECERT_SECRET,
+    };
+    Object.assign(process.env, values);
+    for (const [k, v] of Object.entries(values)) if (v === undefined) delete process.env[k];
+    return () => {
+        for (const [k, v] of Object.entries(before)) {
+            if (v === undefined) delete process.env[k];
+            else process.env[k] = v;
+        }
+    };
+}
+
+const CONFIGURED = {
+    VOICECERT_API_BASE: 'https://voicecert.test',
+    VOICECERT_SITE_KEY: 'vcs_test',
+    VOICECERT_SECRET: 'vc_secret_test',
+};
+
+const jsonRes = (status, body) => ({ ok: status < 400, status, json: async () => body });
+
+test('an unconfigured provider is never offered and never passes', async () => {
+    const restore = withVoiceCertEnv({
+        VOICECERT_API_BASE: undefined, VOICECERT_SITE_KEY: undefined, VOICECERT_SECRET: undefined,
+    });
+    try {
+        const voice = verification.availableMethods().find((m) => m.method === 'voicecert');
+        assert.equal(voice.available, false);
+        assert.equal(voice.siteKey, '', 'an unavailable provider must not advertise a key');
+
+        const result = await verification.issueReceipt({ method: 'voicecert', token: 't', actorId: 'usr_1' });
+        assert.equal(result.verified, false);
+        assert.equal(result.receipt, null);
+    } finally {
+        restore();
+    }
+});
+
+test('a half-configured provider stays unavailable', async () => {
+    // A secret without a site key means the widget can never produce a token —
+    // reporting available here would dead-end the member at the composer.
+    const restore = withVoiceCertEnv({ ...CONFIGURED, VOICECERT_SITE_KEY: undefined });
+    try {
+        const voice = verification.availableMethods().find((m) => m.method === 'voicecert');
+        assert.equal(voice.available, false);
+    } finally {
+        restore();
+    }
+});
+
+test('VoiceCert is redeemed as JSON at /v1/verify with the secret in the body', async () => {
+    const restore = withVoiceCertEnv(CONFIGURED);
+    try {
+        await withFetch(() => jsonRes(200, { success: true }), async (calls) => {
+            const out = await verification.issueReceipt({
+                method: 'voicecert', token: 'tok_abc', actorId: 'usr_1',
+            });
+            assert.equal(out.verified, true);
+            assert.equal(out.receipt.strength, 'voice');
+
+            assert.equal(calls.length, 1);
+            const [call] = calls;
+            assert.equal(call.url, 'https://voicecert.test/v1/verify');
+            assert.equal(call.init.headers['Content-Type'], 'application/json');
+            // The endpoint reads `token`, not Turnstile's `response`, and a
+            // form body silently reads as a missing token. Pin both.
+            const sent = JSON.parse(call.init.body);
+            assert.equal(sent.token, 'tok_abc');
+            assert.equal(sent.secret, 'vc_secret_test');
+        });
+    } finally {
+        restore();
+    }
+});
+
+test('VoiceCert fails closed when the verifier is unreachable', async () => {
+    const restore = withVoiceCertEnv(CONFIGURED);
+    try {
+        await withFetch(() => { throw new Error('ECONNREFUSED'); }, async () => {
+            const out = await verification.issueReceipt({
+                method: 'voicecert', token: 'tok', actorId: 'usr_1',
+            });
+            assert.equal(out.verified, false, 'an unreachable verifier must not mint a receipt');
+            assert.equal(out.reason, 'voicecert_unreachable');
+            assert.equal(out.receipt, null);
+        });
+    } finally {
+        restore();
+    }
+});
+
+test('VoiceCert fails closed on an error status and on an explicit failure', async () => {
+    const restore = withVoiceCertEnv(CONFIGURED);
+    try {
+        await withFetch(() => jsonRes(500, {}), async () => {
+            const out = await verification.issueReceipt({ method: 'voicecert', token: 't', actorId: 'usr_1' });
+            assert.equal(out.verified, false);
+            assert.equal(out.reason, 'voicecert_http_500');
+        });
+        // A 200 carrying `success: false` is the ordinary rejection path, and is
+        // the one a truthy-check on the response object would get wrong.
+        await withFetch(() => jsonRes(200, { success: false, 'error-codes': ['invalid-input-response'] }), async () => {
+            const out = await verification.issueReceipt({ method: 'voicecert', token: 't', actorId: 'usr_1' });
+            assert.equal(out.verified, false);
+            assert.equal(out.reason, 'invalid-input-response');
+        });
+    } finally {
+        restore();
+    }
+});
+
+test('a VoiceCert watermark is kept server-side and never returned to the client', async () => {
+    const restore = withVoiceCertEnv(CONFIGURED);
+    try {
+        await withFetch(() => jsonRes(200, { success: true, watermark: 'wm_correlates_to_a_person' }), async () => {
+            const out = await verification.issueReceipt({ method: 'voicecert', token: 't', actorId: 'usr_1' });
+            assert.ok(!JSON.stringify(out.receipt).includes('wm_correlates_to_a_person'),
+                'a cross-content correlator leaked to the client');
+        });
+    } finally {
+        restore();
+    }
+});

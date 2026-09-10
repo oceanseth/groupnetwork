@@ -36,12 +36,11 @@ jobs:
           npm --prefix api/src ci
           npm run test:api
 
+      # Endpoints come from the committed .env.production, not CI variables. An
+      # unset repository variable is an empty string, and an empty string wins
+      # over the .env file — which would ship a build pointing at no API at all,
+      # silently and with a green check.
       - name: Build
-        env:
-          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
-          VITE_WS_URL: ${{ vars.VITE_WS_URL }}
-          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
-          VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
         run: npm run build
 
       - name: Sync files to S3

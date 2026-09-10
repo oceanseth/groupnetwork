@@ -27,7 +27,15 @@ Parameters:
     Default: https://masky.ai/api
   GoogleClientId:
     Type: String
-    Description: Google Identity Services client_id, used to verify ID tokens.
+    Default: ''
+    Description: >
+      Google Identity Services client_id, used to verify ID tokens. Empty is a
+      valid deployment — Google sign-in is simply unavailable and Masky is the
+      only door.
+  TurnstileSiteKey:
+    Type: String
+    Default: ''
+    Description: Cloudflare Turnstile site key. The captcha fallback is off unless both this and the secret are set.
   TurnstileSecret:
     Type: String
     NoEcho: true
@@ -35,17 +43,30 @@ Parameters:
     Description: Cloudflare Turnstile secret key for the human-only captcha.
   VoiceCertApiBase:
     Type: String
-    Default: ''
+    Default: https://vjo75sxcjitvjyzwbkiadmg2u40nojps.lambda-url.us-east-1.on.aws
     Description: >
-      VoiceCert verification API base URL. Leave empty until the contract is
-      wired — the voicecert provider reports unavailable rather than pretending.
-  VoiceCertApiKey:
+      VoiceCert verification API. This is a raw Lambda function URL published by
+      VoiceCert's own widget; point it at a custom domain once one exists.
+  VoiceCertSiteKey:
+    Type: String
+    Default: ''
+    Description: VoiceCert site key (public — the browser widget sends it to open a session).
+  VoiceCertSecret:
     Type: String
     NoEcho: true
     Default: ''
+    Description: >
+      VoiceCert org secret used to redeem a widget token server-side. Pass via
+      SSM (resolve:ssm-secure) rather than on the command line.
   WebOrigin:
     Type: String
     Default: https://www.groupnetwork.com
+  AltWebOrigin:
+    Type: String
+    Default: https://groupnetwork.com
+    Description: >
+      The apex and www are both aliases on the same CloudFront distribution, so
+      the app genuinely serves from two origins and CORS has to allow both.
 
 Globals:
   Function:
@@ -61,9 +82,11 @@ Globals:
         MASKY_CLIENT_SECRET: !Ref MaskyClientSecret
         MASKY_API_BASE: !Ref MaskyApiBase
         GOOGLE_CLIENT_ID: !Ref GoogleClientId
+        TURNSTILE_SITE_KEY: !Ref TurnstileSiteKey
         TURNSTILE_SECRET: !Ref TurnstileSecret
         VOICECERT_API_BASE: !Ref VoiceCertApiBase
-        VOICECERT_API_KEY: !Ref VoiceCertApiKey
+        VOICECERT_SITE_KEY: !Ref VoiceCertSiteKey
+        VOICECERT_SECRET: !Ref VoiceCertSecret
         WEB_ORIGIN: !Ref WebOrigin
         HARNESS_KEY_ID: !Ref HarnessKey
 
@@ -122,7 +145,7 @@ Resources:
     Properties:
       StageName: !Ref Stage
       CorsConfiguration:
-        AllowOrigins: [!Ref WebOrigin, 'http://localhost:5173']
+        AllowOrigins: [!Ref WebOrigin, !Ref AltWebOrigin, 'http://localhost:5173']
         AllowHeaders: [authorization, content-type]
         AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
         AllowCredentials: false

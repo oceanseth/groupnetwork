@@ -17,13 +17,17 @@ const { badRequest } = require('./http');
 const RECEIPT_TTL_SEC = 15 * 60; // a proof is good for one posting session
 
 /**
- * Cloudflare Turnstile — the "human-only captcha". Fully wired: the client
- * widget produces a token, we redeem it once at siteverify.
+ * Cloudflare Turnstile — the "human-only captcha". The weaker of the two
+ * providers and deliberately the fallback: it proves "not a trivial bot", not
+ * "a live person". Offered when VoiceCert is unavailable or the member cannot
+ * complete a voice check right now.
  */
 const turnstile = {
     id: 'captcha',
     label: 'Human-only captcha',
-    available: () => Boolean(process.env.TURNSTILE_SECRET),
+    strength: 'captcha',
+    siteKey: () => process.env.TURNSTILE_SITE_KEY || '',
+    available: () => Boolean(process.env.TURNSTILE_SECRET && process.env.TURNSTILE_SITE_KEY),
     async verify({ token, remoteIp }) {
         if (!token) throw badRequest('Captcha token is required.');
         const form = new URLSearchParams({ secret: process.env.TURNSTILE_SECRET, response: token });
@@ -43,50 +47,84 @@ const turnstile = {
 };
 
 /**
- * VoiceCert — voice-biometric proof of a live human, a materially stronger
- * signal than a captcha.
+ * VoiceCert — voice-biometric proof of a live human, and the primary provider
+ * here. A captcha proves a bot did not fill the form; a voice check proves a
+ * person was present, which is the claim an unattributed post actually makes.
  *
- * NOT WIRED YET. No VoiceCert API contract was available when this was built,
- * so rather than guess at an endpoint and ship something that silently passes
- * everyone, this provider reports itself unavailable until VOICECERT_API_BASE
- * is set and `verify` below is filled in against the real contract.
+ * The browser half is VoiceCert's own widget: it opens a session, deep-links or
+ * QR-codes the member into the VoiceCert app, polls until the check passes, and
+ * hands back a token. This is the server half — redeeming that token.
+ *
+ * Contract note, because it is not written down anywhere else: the redeem
+ * endpoint is Turnstile-*shaped* but not Turnstile-*compatible*. It accepts
+ * JSON only, and the field is `token`, not `response`. Posting a form body (the
+ * natural thing to do when porting Turnstile code) is not rejected — it comes
+ * back `missing-input-response`, which reads like a client bug rather than a
+ * content-type mistake. Hence the explicit JSON here.
  */
 const voicecert = {
     id: 'voicecert',
     label: 'VoiceCert voice verification',
-    available: () => Boolean(process.env.VOICECERT_API_BASE && process.env.VOICECERT_API_KEY),
+    strength: 'voice',
+    siteKey: () => process.env.VOICECERT_SITE_KEY || '',
+    available: () => Boolean(
+        process.env.VOICECERT_API_BASE
+        && process.env.VOICECERT_SECRET
+        && process.env.VOICECERT_SITE_KEY,
+    ),
     async verify({ token }) {
         if (!voicecert.available()) {
             return { verified: false, reason: 'voicecert_not_configured', strength: 'voice' };
         }
-        // TODO(contract): replace with the real VoiceCert verification call.
-        // Expected shape once known: POST {base}/verify { token } -> { verified, subjectRef }.
-        const res = await fetch(`${process.env.VOICECERT_API_BASE.replace(/\/$/, '')}/verify`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${process.env.VOICECERT_API_KEY}`,
-            },
-            body: JSON.stringify({ token }),
-        });
+        if (!token) throw badRequest('VoiceCert token is required.');
+
+        let res;
+        try {
+            res = await fetch(`${process.env.VOICECERT_API_BASE.replace(/\/$/, '')}/v1/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ secret: process.env.VOICECERT_SECRET, token }),
+            });
+        } catch (err) {
+            // Fail closed. An unreachable verifier must never mint a receipt.
+            return { verified: false, reason: 'voicecert_unreachable', strength: 'voice' };
+        }
+
         const body = await res.json().catch(() => ({}));
+        if (!res.ok) return { verified: false, reason: `voicecert_http_${res.status}`, strength: 'voice' };
+
         return {
-            verified: res.ok && body.verified === true,
-            reason: res.ok ? null : `voicecert_http_${res.status}`,
+            verified: body.success === true,
+            reason: body.success === true ? null : (body['error-codes'] || ['verification_failed']).join(','),
             strength: 'voice',
+            // VoiceCert's watermarking ties a member's published content back to
+            // their verification. If the redeem response carries such a handle we
+            // keep it on the receipt (server-side only — it is a correlator, so it
+            // must never reach a read path that renders an anonymous post).
+            subjectRef: body.watermark || body.subject || body.sub || null,
         };
     },
 };
 
-const PROVIDERS = { captcha: turnstile, voicecert };
+// Order matters: this is the order the composer offers them in, and VoiceCert
+// is the stronger proof.
+const PROVIDERS = { voicecert, captcha: turnstile };
 
-/** What the client should offer on the "post without your name" control. */
+/**
+ * What the client should offer on the "post without your name" control.
+ *
+ * Site keys are served from here rather than baked in at build time: they are
+ * public by definition, and shipping them at runtime means rotating a key is a
+ * stack parameter change instead of a frontend rebuild and CloudFront
+ * invalidation.
+ */
 function availableMethods() {
     return Object.values(PROVIDERS).map((p) => ({
         method: p.id,
         label: p.label,
         available: p.available(),
-        strength: p.id === 'voicecert' ? 'voice' : 'captcha',
+        strength: p.strength,
+        siteKey: p.available() ? p.siteKey() : '',
     }));
 }
 
@@ -115,6 +153,7 @@ async function issueReceipt({ method, token, actorId, remoteIp }) {
         // Retained for rate-limiting and abuse response only; never returned on
         // a read path that renders an anonymous post.
         actorId,
+        subjectRef: result.subjectRef || null,
         issuedAt: now,
         expiresAt: Math.floor(now / 1000) + RECEIPT_TTL_SEC,
     });

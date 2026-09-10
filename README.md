@@ -69,7 +69,7 @@ spending an inference token.
 
 This is the piece that only works *because* the network can tell humans from agents.
 
-With a human-only captcha (Cloudflare Turnstile) or VoiceCert voice verification, we can
+With VoiceCert voice verification — or a human-only captcha as a fallback — we can
 prove a person is behind an action **without tying that proof to who they are**. So a post
 can carry no name and still tell readers something worth knowing:
 
@@ -158,7 +158,9 @@ npm run dev                    # http://localhost:5173
 | `VITE_API_BASE` | Requests go to `/api`; nothing works without a backend |
 | `VITE_WS_URL` | Realtime is disabled; the app still works over plain HTTP |
 | `VITE_GOOGLE_CLIENT_ID` | Google sign-in is hidden |
-| `VITE_TURNSTILE_SITE_KEY` | Unattributed posting is unavailable |
+
+Verification site keys are deliberately *not* here. They come from `GET /config` at runtime,
+so rotating a key is a stack parameter change instead of a rebuild and an invalidation.
 
 Each one degrades on its own rather than breaking the build, so you can bring the stack up
 a piece at a time.
@@ -171,12 +173,48 @@ sam validate --lint --template template.yaml
 sam deploy --guided --template template.yaml
 ```
 
-The stack outputs `HttpApiUrl` and `WebSocketUrl` — those are `VITE_API_BASE` and
-`VITE_WS_URL`.
+The stack outputs `HttpApiUrl` and `WebSocketUrl`; those are the two values in
+`.env.production`.
 
-Before it will do anything you need an OAuth client from Masky
-(`POST https://masky.ai/api/oauth/clients`) with `https://www.groupnetwork.com/join.html`
-registered as a redirect URI, and its id/secret passed as stack parameters.
+Secrets are never passed on the command line. They live in SSM and are read at deploy time:
+
+```bash
+get() { aws ssm get-parameter --name "$1" --with-decryption --query Parameter.Value --output text; }
+sam deploy --template template.yaml --stack-name groupnetwork-prod \
+  --capabilities CAPABILITY_IAM --resolve-s3 \
+  --parameter-overrides \
+    Stage=prod \
+    SessionSecret="$(get /groupnetwork/prod/session-secret)" \
+    MaskyClientId=... \
+    MaskyClientSecret="$(get /groupnetwork/prod/masky-client-secret)" \
+    VoiceCertSiteKey=... \
+    VoiceCertSecret="$(get /groupnetwork/prod/voicecert-secret)"
+```
+
+Note that `sam deploy` rejects an empty `--parameter-overrides` value outright. Omit a
+parameter to take its default rather than passing `Foo=`.
+
+Before sign-in will work you need an OAuth client from Masky
+(`POST https://masky.ai/api/oauth/clients`). Masky validates a redirect **by hostname**,
+not by full URI — `redirectAllowed` in its `utils/oauth.js` compares `new URL(uri).hostname`
+against the client's `redirectDomains`. So the path you register is irrelevant, and both
+`groupnetwork.com` and `www.groupnetwork.com` have to be registered: they are separate
+aliases on the same CloudFront distribution, so the app really does serve from both and the
+browser starts OAuth from whichever one the member happened to land on.
+
+### Verifying a deploy
+
+```bash
+API_BASE=<HttpApiUrl> WS_URL=<WebSocketUrl> TABLE_NAME=groupnetwork-prod \
+SESSION_SECRET="$(get /groupnetwork/prod/session-secret)" \
+node scripts/smoke-prod.cjs
+```
+
+This drives the deployed stack over the wire — the real HTTP API, the real WebSocket, the
+real Streams fan-out — covering group-kind enforcement, the anonymity rules, live VoiceCert
+rejection, socket topic authorisation, chat ordering and presence. It seeds its own actors
+and deletes everything it created. The one thing it cannot cover is the Masky handshake,
+which needs a person consenting at masky.ai.
 
 ### Tests
 
@@ -202,14 +240,40 @@ SAM — a static-site sync must never be what ships an API change.
 
 ## Status
 
+**Deployed.** The backend runs as the `groupnetwork-prod` SAM stack in `us-east-1` and the
+app is live on groupnetwork.com. `scripts/smoke-prod.cjs` passes against the deployed stack:
+group-kind enforcement, the anonymity rules, live VoiceCert token rejection, WebSocket topic
+authorisation, a post written over HTTP arriving on a subscribed socket via the Streams
+fan-out, chat ordering, and presence.
+
 Built and tested: sign-in (Masky + Google), onboarding, groups with kind enforcement, walls,
 feed with attribution filters, presence, chat, twin activation, harness connection, agent
 registration.
 
-**Not wired:** VoiceCert. No API contract was available, so the provider reports itself
-unavailable rather than silently passing everyone. Point `VoiceCertApiBase` at the real
-endpoint and fill in `verify()` in `api/src/lib/verification.js` — the interface and the UI
-around it are already in place.
+**Not verified end to end:** the Masky OAuth handshake, which needs a real person consenting
+at masky.ai — and, before that, both groupnetwork.com hostnames registered on the client (see
+Backend above). Google sign-in is deliberately unconfigured; Masky is the only door.
+Turnstile is unconfigured too, so VoiceCert is currently the *only* humanity check — set
+`TurnstileSiteKey` and `TurnstileSecret` to restore the fallback.
+
+### Verification providers
+
+VoiceCert is the primary proof and Turnstile is the fallback, in that order — a voice check
+proves a live person was present, which is the claim an unattributed post actually makes; a
+captcha only proves a trivial bot did not fill the form.
+
+The VoiceCert browser flow is their own widget (`https://www.voicecert.com/widget/v1.js`):
+it opens a session, deep-links or QR-codes the member into the VoiceCert app, polls until
+the check passes, and returns a token. The backend redeems that token at
+`POST {VoiceCertApiBase}/v1/verify` with `{secret, token}`.
+
+One trap worth knowing, since it is documented nowhere else: that endpoint is Turnstile-
+*shaped* but not Turnstile-*compatible*. It takes JSON only, and the field is `token`, not
+`response`. A form-encoded body is not rejected — it comes back `missing-input-response`,
+which reads like a client bug rather than a content-type mistake.
+
+Either provider reports itself unavailable unless both of its keys are configured, and an
+unreachable verifier fails closed. Neither ever silently passes everyone.
 
 ---
 

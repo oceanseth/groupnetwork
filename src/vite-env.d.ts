@@ -8,8 +8,6 @@ interface ImportMetaEnv {
   readonly VITE_WS_URL?: string;
   /** Google Identity Services client id. Google sign-in is hidden when unset. */
   readonly VITE_GOOGLE_CLIENT_ID?: string;
-  /** Cloudflare Turnstile site key. Unattributed posting is off when unset. */
-  readonly VITE_TURNSTILE_SITE_KEY?: string;
 }
 
 interface ImportMeta {
